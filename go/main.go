@@ -21,6 +21,10 @@ func main() {
 		if err := runUp(*socket); err != nil {
 			log.Fatal(err)
 		}
+	case "uninstall":
+		if err := runUninstall(); err != nil {
+			log.Fatal(err)
+		}
 	default:
 		usage()
 	}
@@ -28,5 +32,6 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: mpd-proxy up [--socket PATH]")
+	fmt.Fprintln(os.Stderr, "       sudo mpd-proxy uninstall")
 	os.Exit(2)
 }
