@@ -2,8 +2,16 @@
 
 The small, privileged helper for [mpd-virt](https://github.com/mutms/mpd-virt).
 It runs a **WireGuard** tunnel and a **split-DNS** forwarder so this Mac can
-reach every mpd VM's internal `10.163.<NNN>.0/24` podman bridge — transparently,
-for every app — without per-VM routes or `/etc/resolver` files.
+reach every mpd VM's gateway `10.163.<NNN>.1` (caddy + dnsmasq) — transparently,
+for every app, several VMs at once — without per-VM routes or `/etc/resolver`
+files.
+
+This is the **advanced, daily-driver** reachability path, for developers running
+several VMs every day. It needs `sudo` (to create the utun). For occasional use
+or a first setup there is a simpler, sudo-free alternative: mpd-virt writes a
+**SOCKS-over-SSH** block (`ssh -N mpd-<NNN>-socks` + a dedicated browser), which
+tunnels one VM through plain SSH with no overlay — see mpd-virt's docs. mpd-proxy
+is what you graduate to.
 
 It is deliberately a **separate binary** from mpd-virt, because it is the only
 component that needs root. It reads **no files** and holds none of mpd-virt's
@@ -14,8 +22,10 @@ the route — then **drops to the invoking user** for the rest of its life.
 ## How it works
 
 - **One `utun`, many peers.** mpd-virt adds one WireGuard peer per VM, its
-  `AllowedIPs` set to the VM's `10.163.<NNN>.0/24`. WireGuard's cryptokey
-  routing demuxes each packet to the right VM — one interface reaches them all.
+  `AllowedIPs` scoped to just the VM's gateway `10.163.<NNN>.1/32` — the
+  container IPs behind it are deliberately *not* routed (reached indirectly via
+  caddy/ssh, and sealed by an in-VM firewall). WireGuard's cryptokey routing
+  demuxes each packet to the right VM — one interface reaches them all.
 - **One aggregate route.** `10.163.0.0/16 → utun`, installed once. A new VM's
   `/24` is already covered, so adopting a VM needs no new route and no `sudo`.
 - **Split DNS.** A forwarder on `127.0.0.1:5354` sends `<NNN>.mpd.test` to that
@@ -55,8 +65,9 @@ uid (`LOCAL_PEERCRED`).
 | `list` | — | current VMs |
 
 mpd-proxy is a dumb plumber: mpd-virt derives `allowed_ips`
-(`10.163.<NNN>.0/24`) and `resolver` (`10.163.<NNN>.1:53`) from the id and sends
-them; mpd-proxy just applies what it is handed. It has its own keypair and hands
+(`10.163.<NNN>.1/32` — the gateway only, not the container subnet) and `resolver`
+(`10.163.<NNN>.1:53`) from the id and sends them; mpd-proxy just applies what it
+is handed. It has its own keypair and hands
 out the public half via `pubkey` — mpd-virt authorizes that on each VM's
 WireGuard endpoint at takeover, and the VM's key comes back in `add`.
 
@@ -83,12 +94,13 @@ plus the utun/route/resolver calls, and nothing else changes.
 
 ## Status
 
-Prototype. Proven working: the DNS forwarder, WireGuard + cryptokey routing
-(embedded, unit-tested via userspace netstack), real `utun` creation, the
-control socket with peer-cred auth, and `sudo mpd-proxy up` (utun + address +
-route + WireGuard + DNS + control socket + privsep drop, verified live).
-Pending: a real WireGuard endpoint on a VM for end-to-end reachability, the
-mpd-virt client that drives the socket, a persisted key, and a LaunchDaemon.
+Working end-to-end. Proven live: the DNS forwarder, WireGuard + cryptokey
+routing (embedded, unit-tested via userspace netstack), real `utun` creation,
+the control socket with peer-cred auth, and `sudo mpd-proxy up` (utun + address
++ route + WireGuard + DNS + control socket + privsep drop). mpd-virt drives the
+socket at takeover/start, and reachability is validated against real VMs —
+transparent HTTPS and split DNS through the tunnel. Pending: a persisted
+WireGuard key and a LaunchDaemon for boot.
 
 Design and rationale: `docs/proposals/mpd-proxy-wireguard.md` in the mpd-virt
 repo.
