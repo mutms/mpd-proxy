@@ -19,7 +19,7 @@ export GOTOOLCHAIN = local
 
 build:
 	@mkdir -p bin
-	cd $(GO_DIR) && go build -o $(CURDIR)/bin/mpd-proxy .
+	cd $(GO_DIR) && go build -o $(CURDIR)/bin/mpd-proxy ./cmd/mpd-proxy
 	@echo "Native binary: bin/mpd-proxy"
 
 install: build
