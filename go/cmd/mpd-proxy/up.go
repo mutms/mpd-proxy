@@ -21,7 +21,6 @@ const (
 	mpdSubnet     = "10.163.0.0/16"
 	clientAddr    = "10.163.0.1" // the Mac's own address in the mpd overlay (10.163.0.x is unused by VMs)
 	dnsListen     = "127.0.0.1:5354"
-	upstream      = "1.1.1.1:53"
 )
 
 // runUp brings the whole proxy up in the foreground: create the utun and the
@@ -60,7 +59,7 @@ func runUp(socketPath string) error {
 	log.Printf("route %s → %s", mpdSubnet, name)
 
 	// --- DNS forwarder on a high port (no privilege). ---
-	fwd := NewForwarder(upstream)
+	fwd := NewForwarder()
 	dnsSrv := &dns.Server{Addr: dnsListen, Net: "udp", Handler: fwd}
 	go func() {
 		if err := dnsSrv.ListenAndServe(); err != nil {
@@ -68,7 +67,7 @@ func runUp(socketPath string) error {
 		}
 	}()
 	defer dnsSrv.Shutdown()
-	log.Printf("DNS forwarder on %s (mpd.test → tunnel, else %s)", dnsListen, upstream)
+	log.Printf("DNS forwarder on %s (routed mpd.test zones only — no upstream)", dnsListen)
 
 	// --- Control socket, reachable by the invoking user after we drop root. ---
 	uid, gid := invokingUID(), invokingGID()

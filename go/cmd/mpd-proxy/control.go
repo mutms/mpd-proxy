@@ -18,7 +18,7 @@ type Request struct {
 	ID         string   `json:"id,omitempty"`          // add/remove key
 	PublicKey  string   `json:"public_key,omitempty"`  // add: the VM's WG key (base64)
 	Endpoint   string   `json:"endpoint,omitempty"`    // add: VM WG endpoint host:port
-	AllowedIPs []string `json:"allowed_ips,omitempty"` // add: e.g. ["10.163.181.0/24"]
+	AllowedIPs []string `json:"allowed_ips,omitempty"` // add: e.g. ["10.163.181.1/32"] — the gateway only
 	Resolver   string   `json:"resolver,omitempty"`    // add: e.g. "10.163.181.1:53"
 }
 

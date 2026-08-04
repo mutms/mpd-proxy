@@ -11,11 +11,16 @@ import (
 // /etc/resolver/mpd.test on the Mac points all of it at this forwarder.
 const mpdDomain = "mpd.test"
 
-// Forwarder is a split-horizon DNS forwarder: a query for <NNN>.mpd.test is
-// sent to that VM's own resolver (10.163.<NNN>.1) through the tunnel, and
-// everything else goes to the host's normal upstream. It answers nothing
-// itself — it only routes the question onward — so a VM's dynamic records
+// Forwarder is a split-horizon DNS forwarder for mpd.test and nothing else:
+// a query for <NNN>.mpd.test is sent to that VM's own resolver
+// (10.163.<NNN>.1) through the tunnel, so a VM's dynamic records
 // (containers, runtimes) keep resolving without this process knowing them.
+// A name in mpd.test with no route gets NXDOMAIN, and anything outside
+// mpd.test is REFUSED — there is deliberately no upstream. Forwarding
+// upstream would leak internal names to an outside resolver and, worse,
+// invite a cycle when the LAN's own DNS also serves mpd.test names (as a
+// home dnsmasq may). LAN names like warp.mpd.test live in the Mac's
+// /etc/hosts, which macOS consults before DNS — they never reach us.
 type Forwarder struct {
 	// mu guards routes. miekg/dns runs ServeDNS in a fresh goroutine per
 	// query while the control socket mutates routes concurrently, so every
@@ -24,19 +29,12 @@ type Forwarder struct {
 	mu     sync.RWMutex
 	routes map[string]string // "<NNN>" -> resolver address, e.g. "10.163.150.1:53"
 
-	// upstream is where names outside mpd.test go — the host's normal resolver.
-	upstream string
-
 	client dns.Client
 }
 
-// NewForwarder builds a Forwarder that sends everything outside mpd.test to
-// upstream (host:port, e.g. "1.1.1.1:53").
-func NewForwarder(upstream string) *Forwarder {
-	return &Forwarder{
-		routes:   make(map[string]string),
-		upstream: upstream,
-	}
+// NewForwarder builds a Forwarder with no routes; the control socket adds them.
+func NewForwarder() *Forwarder {
+	return &Forwarder{routes: make(map[string]string)}
 }
 
 // SetRoute points <NNN>.mpd.test at resolver (host:port). The control socket
@@ -54,40 +52,64 @@ func (f *Forwarder) ClearRoute(nnn string) {
 	delete(f.routes, nnn)
 }
 
-// resolverFor picks the upstream for a query name: a VM's own resolver when
-// the name is inside its zone and a route exists, otherwise the default.
-func (f *Forwarder) resolverFor(qname string) string {
+// resolverFor picks the VM resolver for a query name inside a routed zone.
+// !ok means we won't forward this name: outside mpd.test, or no route (VM
+// down or not adopted).
+func (f *Forwarder) resolverFor(qname string) (string, bool) {
 	nnn, ok := zoneID(qname)
 	if !ok {
-		return f.upstream
+		return "", false
 	}
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	if r, ok := f.routes[nnn]; ok {
-		return r
-	}
-	// Inside mpd.test but no route yet (VM down or not adopted): fall through
-	// to upstream, which simply won't find it — better than hanging.
-	return f.upstream
+	r, ok := f.routes[nnn]
+	return r, ok
 }
 
 // ServeDNS makes *Forwarder a dns.Handler: miekg/dns calls it for every query.
-// We forward the message unchanged and copy the reply straight back.
+// Routed names are forwarded unchanged and the reply copied straight back;
+// everything else is answered locally (NXDOMAIN in-zone, REFUSED out-of-zone)
+// rather than sent anywhere.
 func (f *Forwarder) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
-	upstream := f.upstream
-	if len(req.Question) > 0 {
-		upstream = f.resolverFor(req.Question[0].Name)
+	if len(req.Question) == 0 {
+		refuse(w, req, dns.RcodeRefused)
+		return
+	}
+	qname := req.Question[0].Name
+	resolver, ok := f.resolverFor(qname)
+	if !ok {
+		if inMpdDomain(qname) {
+			// mpd.test, but no such VM registered right now (or the apex,
+			// which deliberately does not resolve).
+			refuse(w, req, dns.RcodeNameError)
+		} else {
+			// Not our domain — the /etc/resolver hook should never send
+			// these; answer "wrong server" instead of resolving them.
+			refuse(w, req, dns.RcodeRefused)
+		}
+		return
 	}
 
-	resp, _, err := f.client.Exchange(req, upstream)
+	resp, _, err := f.client.Exchange(req, resolver)
 	if err != nil || resp == nil {
 		// Report the failure rather than dropping the query on the floor.
-		fail := new(dns.Msg)
-		fail.SetRcode(req, dns.RcodeServerFailure)
-		_ = w.WriteMsg(fail)
+		refuse(w, req, dns.RcodeServerFailure)
 		return
 	}
 	_ = w.WriteMsg(resp)
+}
+
+// refuse answers req locally with the given rcode.
+func refuse(w dns.ResponseWriter, req *dns.Msg, rcode int) {
+	m := new(dns.Msg)
+	m.SetRcode(req, rcode)
+	_ = w.WriteMsg(m)
+}
+
+// inMpdDomain reports whether qname is mpd.test or below it.
+func inMpdDomain(qname string) bool {
+	name := strings.ToLower(strings.TrimSuffix(qname, "."))
+	return name == mpdDomain || strings.HasSuffix(name, "."+mpdDomain)
 }
 
 // zoneID extracts the <NNN> label from a name inside mpd.test — always the

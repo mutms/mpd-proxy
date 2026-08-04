@@ -41,7 +41,7 @@ vet:
 fmt:
 	cd $(GO_DIR) && gofmt -w .
 
-# Fail if anything is not gofmt-clean (for CI / pre-commit).
+# Fail if anything is not gofmt-clean.
 fmt-check:
 	@out=$$(cd $(GO_DIR) && gofmt -l .); \
 	if [ -n "$$out" ]; then echo "not gofmt-clean:"; echo "$$out"; exit 1; fi

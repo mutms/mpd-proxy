@@ -24,6 +24,8 @@ func runUninstall() error {
 	}
 
 	// Stop a running instance so its utun, route, and DNS forwarder go away.
+	// -f matches the full command line, so any process whose argv contains
+	// "mpd-proxy up" is fair game — acceptably blunt for an uninstall.
 	_ = exec.Command("pkill", "-f", "mpd-proxy up").Run()
 
 	// A LaunchDaemon, if boot-install ever put one there.

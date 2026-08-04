@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/miekg/dns"
+)
 
 // zoneID must pull the id label out of any depth of name inside mpd.test, and
 // reject anything outside it — that decision is what routes a query to the
@@ -27,28 +31,68 @@ func TestZoneID(t *testing.T) {
 	}
 }
 
-// resolverFor sends a name to its VM's resolver when a route exists, and to the
-// default upstream otherwise — including names inside mpd.test with no route
-// yet (VM down/unadopted), which must not hang.
+// resolverFor sends a name to its VM's resolver when a route exists, and
+// reports !ok for everything else — names outside mpd.test and names inside
+// it with no route (VM down/unadopted). There is deliberately no upstream to
+// fall back to.
 func TestResolverFor(t *testing.T) {
-	f := NewForwarder("1.1.1.1:53")
+	f := NewForwarder()
 	f.SetRoute("150", "10.163.150.1:53")
 
-	cases := map[string]string{
-		"moodle.150.mpd.test.": "10.163.150.1:53", // routed to its VM
-		"150.mpd.test.":        "10.163.150.1:53",
-		"181.mpd.test.":        "1.1.1.1:53", // in mpd.test but no route → upstream
-		"example.com.":         "1.1.1.1:53", // outside mpd.test → upstream
+	cases := map[string]struct {
+		want string
+		ok   bool
+	}{
+		"moodle.150.mpd.test.": {"10.163.150.1:53", true}, // routed to its VM
+		"150.mpd.test.":        {"10.163.150.1:53", true},
+		"181.mpd.test.":        {"", false}, // in mpd.test but no route
+		"example.com.":         {"", false}, // outside mpd.test
 	}
-	for name, want := range cases {
-		if got := f.resolverFor(name); got != want {
-			t.Errorf("resolverFor(%q) = %q, want %q", name, got, want)
+	for name, exp := range cases {
+		if got, ok := f.resolverFor(name); got != exp.want || ok != exp.ok {
+			t.Errorf("resolverFor(%q) = (%q, %v), want (%q, %v)", name, got, ok, exp.want, exp.ok)
 		}
 	}
 
-	// A cleared route falls back to upstream.
+	// A cleared route stops resolving.
 	f.ClearRoute("150")
-	if got := f.resolverFor("150.mpd.test."); got != "1.1.1.1:53" {
-		t.Errorf("after ClearRoute, resolverFor = %q, want upstream", got)
+	if _, ok := f.resolverFor("150.mpd.test."); ok {
+		t.Error("after ClearRoute, resolverFor still ok")
 	}
 }
+
+// Unroutable queries are answered locally: NXDOMAIN inside mpd.test (unknown
+// VM, or the apex), REFUSED outside it. Nothing is ever forwarded upstream —
+// that would leak internal names and can cycle when the LAN DNS also serves
+// mpd.test.
+func TestServeDNSLocalAnswers(t *testing.T) {
+	f := NewForwarder()
+
+	cases := map[string]int{
+		"181.mpd.test.": dns.RcodeNameError, // no route
+		"mpd.test.":     dns.RcodeNameError, // apex never resolves
+		"example.com.":  dns.RcodeRefused,   // not our domain
+	}
+	for name, want := range cases {
+		req := new(dns.Msg)
+		req.SetQuestion(name, dns.TypeA)
+		w := &recordingWriter{}
+		f.ServeDNS(w, req)
+		if w.msg == nil || w.msg.Rcode != want {
+			got := -1
+			if w.msg != nil {
+				got = w.msg.Rcode
+			}
+			t.Errorf("ServeDNS(%q) rcode = %d, want %d", name, got, want)
+		}
+	}
+}
+
+// recordingWriter captures the reply; the rest of dns.ResponseWriter is
+// unused by these paths.
+type recordingWriter struct {
+	dns.ResponseWriter
+	msg *dns.Msg
+}
+
+func (w *recordingWriter) WriteMsg(m *dns.Msg) error { w.msg = m; return nil }

@@ -15,7 +15,7 @@ import (
 // test's uid.
 func TestControlSocket(t *testing.T) {
 	tun, _ := newNetTunnel(t, "10.99.1.1", 59000, mustKey(t))
-	fwd := NewForwarder("1.1.1.1:53")
+	fwd := NewForwarder()
 	ctrl := NewController(mustKey(t), tun, fwd, os.Getuid())
 
 	sock := filepath.Join(t.TempDir(), "mpd-proxy.sock")
@@ -53,15 +53,15 @@ func TestControlSocket(t *testing.T) {
 	vmKey := mustKey(t).PublicKey().String()
 	if r := call(Request{
 		Op: "add", ID: "181", PublicKey: vmKey,
-		Endpoint: "127.0.0.1:51820", AllowedIPs: []string{"10.163.181.0/24"},
+		Endpoint: "127.0.0.1:51820", AllowedIPs: []string{"10.163.181.1/32"},
 		Resolver: "10.163.181.1:53",
 	}); !r.OK {
 		t.Fatalf("add: %+v", r)
 	}
 
 	// The DNS route took effect in the forwarder.
-	if got := fwd.resolverFor("moodle.181.mpd.test."); got != "10.163.181.1:53" {
-		t.Errorf("forwarder route = %q, want 10.163.181.1:53", got)
+	if got, ok := fwd.resolverFor("moodle.181.mpd.test."); !ok || got != "10.163.181.1:53" {
+		t.Errorf("forwarder route = %q, %v, want 10.163.181.1:53", got, ok)
 	}
 
 	// list shows exactly the one VM.
@@ -76,7 +76,7 @@ func TestControlSocket(t *testing.T) {
 	if r := call(Request{Op: "list"}); len(r.VMs) != 0 {
 		t.Errorf("after remove, list = %+v", r.VMs)
 	}
-	if got := fwd.resolverFor("181.mpd.test."); got != "1.1.1.1:53" {
-		t.Errorf("route not cleared: got %q, want upstream", got)
+	if got, ok := fwd.resolverFor("181.mpd.test."); ok {
+		t.Errorf("route not cleared: still resolves to %q", got)
 	}
 }
