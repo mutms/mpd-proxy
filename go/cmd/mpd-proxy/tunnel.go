@@ -14,8 +14,8 @@ import (
 // Tunnel is one WireGuard interface with many peers. Cryptokey routing sends
 // each outbound packet to the peer whose AllowedIPs contains the destination,
 // so a single Tunnel reaches every mpd VM: one peer per box, its AllowedIPs
-// scoped to the box's gateway 10.163.<NNN>.1/32 alone — the container subnet
-// behind it is deliberately not routed.
+// covering the box's whole container subnet 10.163.<NNN>.0/24 (project URLs
+// are served at container IPs; the box-side firewall admits wg0 traffic).
 //
 // It wraps wireguard-go's device.Device — that does the crypto and the
 // routing; we only feed it config in WireGuard's "UAPI" text format.

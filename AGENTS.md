@@ -23,9 +23,9 @@ simple tier); this is the daily-driver upgrade.
 ## How it works
 
 - **One `utun`, many peers.** mpd-virt adds one WireGuard peer per VM, its
-  `AllowedIPs` scoped to just the VM's gateway `10.163.<NNN>.1/32` — the
-  container IPs behind it are deliberately *not* routed (reached indirectly
-  via caddy/ssh, and sealed by an in-VM firewall). WireGuard's cryptokey
+  `AllowedIPs` covering the VM's whole container subnet `10.163.<NNN>.0/24`
+  (project URLs are served at container IPs; the in-VM firewall admits wg0
+  and seals the subnet from the LAN only). WireGuard's cryptokey
   routing demuxes each packet to the right VM. The Mac's own overlay address
   is `10.163.0.1` (the `10.163.0.x` net is unused by VMs), which is exactly
   what each VM's firewall allow-lists.
@@ -80,7 +80,7 @@ Every response carries `ok` plus, per op, the `pubkey` or the `vms` list;
 failures come back as `ok:false` with an `error` string.
 
 mpd-proxy is a dumb plumber: mpd-virt derives `allowed_ips`
-(`10.163.<NNN>.1/32` — the gateway only) and `resolver` (`10.163.<NNN>.1:53`)
+(`10.163.<NNN>.0/24` — the whole container subnet) and `resolver` (`10.163.<NNN>.1:53`)
 from the id and sends them; mpd-proxy just applies what it is handed. It has
 its own keypair and hands out the public half via `pubkey` — mpd-virt
 authorizes that on each VM's WireGuard endpoint at takeover, and the VM's key
