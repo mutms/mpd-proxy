@@ -29,7 +29,7 @@ const (
 // DNS forwarder + the control socket as the invoking user and block until
 // Ctrl-C. Every control command is logged — the ops are rare, so there's no
 // reason to be quiet.
-func runUp(socketPath string) error {
+func runUp() error {
 	// Privsep is not optional: refuse to start when there is no user to drop
 	// to. Under sudo the invoking user arrives in SUDO_UID; bare root has
 	// none and is refused — mpd-proxy is always started by hand via sudo.
@@ -94,11 +94,9 @@ func runUp(socketPath string) error {
 	log.Printf("DNS forwarder on %s (routed mpd.test zones only — no upstream)", dnsListen)
 
 	// --- Control socket in the user's own ~/.mpd-virt/proxy/. ---
-	if socketPath == "" {
-		socketPath, err = defaultSocketPath(uid)
-		if err != nil {
-			return err
-		}
+	socketPath, err := socketPathFor(uid)
+	if err != nil {
+		return err
 	}
 	_ = os.Remove(socketPath)
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
@@ -167,18 +165,18 @@ func ensureResolverFile() error {
 	return nil
 }
 
-// defaultSocketPath is ~/.mpd-virt/proxy/socket for the invoking user —
-// inside mpd-virt's own state directory, since mpd-virt is the only client.
-// Runs after the privilege drop, so plain Mkdir yields user-owned dirs with
-// no chown dance. The proxy/ dir is 0700: no other user can even reach the
+// socketPathFor is ~/.mpd-virt/proxy/socket for the invoking user — inside
+// mpd-virt's own state directory, since mpd-virt is the only client. Runs
+// after the privilege drop, so plain Mkdir yields user-owned dirs with no
+// chown dance. The proxy/ dir is 0700: no other user can even reach the
 // socket, a filesystem wall in front of the per-connection peer-uid gate
 // (and unlike /tmp, nobody else can play games with the path, and macOS's
 // periodic /tmp cleanup can't reap a long-lived socket). The home comes
 // from the user database, not $HOME — sudo may leave $HOME at root's.
-func defaultSocketPath(uid int) (string, error) {
+func socketPathFor(uid int) (string, error) {
 	u, err := user.LookupId(strconv.Itoa(uid))
 	if err != nil || u.HomeDir == "" {
-		return "", fmt.Errorf("resolving home of uid %d for the control socket (or pass --socket): %v", uid, err)
+		return "", fmt.Errorf("resolving home of uid %d for the control socket: %v", uid, err)
 	}
 	root := filepath.Join(u.HomeDir, ".mpd-virt")
 	if err := os.Mkdir(root, 0o755); err != nil && !os.IsExist(err) {

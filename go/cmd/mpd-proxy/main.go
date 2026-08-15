@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -15,10 +14,10 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "up":
-		fs := flag.NewFlagSet("up", flag.ExitOnError)
-		socket := fs.String("socket", "", "control socket path (default: ~/.mpd-virt/proxy/socket of the sudo user)")
-		_ = fs.Parse(os.Args[2:])
-		if err := runUp(*socket); err != nil {
+		if len(os.Args) > 2 {
+			usage() // `up` takes no flags!
+		}
+		if err := runUp(); err != nil {
 			log.Fatal(err)
 		}
 	case "uninstall":
@@ -31,7 +30,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: mpd-proxy up [--socket PATH]")
+	fmt.Fprintln(os.Stderr, "usage: sudo mpd-proxy up")
 	fmt.Fprintln(os.Stderr, "       sudo mpd-proxy uninstall")
 	os.Exit(2)
 }
