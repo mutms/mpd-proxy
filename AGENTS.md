@@ -78,8 +78,8 @@ touch other routes, or resolve other domains.
 
 ## Control protocol
 
-Newline-delimited JSON over the unix socket (default
-`~/.mpd-virt/proxy/socket` in the sudo user's home, `--socket` overrides) —
+Newline-delimited JSON over the unix socket —
+`~/.mpd-virt/proxy/socket` in the sudo user's home, no override —
 a connection may carry several requests, each answered in order. The socket
 sits inside mpd-virt's own state directory because mpd-virt is the only
 client; the `proxy/` dir is user-owned mode `0700`, so other users cannot
@@ -112,7 +112,7 @@ comes back in `add`.
 Everything lives in `go/cmd/mpd-proxy/` — small enough to read in one
 sitting:
 
-- `main.go` — the two verbs: `up [--socket PATH]`, `uninstall`
+- `main.go` — the two verbs: `up`, `uninstall`; no flags
 - `up.go` — privileged setup (utun, address, route), then privsep drop
 - `tunnel.go` — the embedded wireguard-go device and its UAPI config
 - `dns.go` — the split-horizon forwarder (routed zones only, no upstream)
