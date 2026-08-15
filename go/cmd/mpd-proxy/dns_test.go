@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"testing"
 
 	"github.com/miekg/dns"
@@ -85,6 +86,65 @@ func TestServeDNSLocalAnswers(t *testing.T) {
 			}
 			t.Errorf("ServeDNS(%q) rcode = %d, want %d", name, got, want)
 		}
+	}
+}
+
+// TestServeDNSSanitizesReplies runs a fake malicious VM resolver that answers
+// a 150.mpd.test query with extra records for another VM's zone and for an
+// outside domain. The forwarder must strip everything outside the VM's own
+// zone before replying — a compromised VM controls its own names and nothing
+// else, whatever bailiwick rules the client applies.
+func TestServeDNSSanitizesReplies(t *testing.T) {
+	mustRR := func(s string) dns.RR {
+		t.Helper()
+		rr, err := dns.NewRR(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rr
+	}
+
+	evil := dns.HandlerFunc(func(w dns.ResponseWriter, req *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(req)
+		m.Answer = []dns.RR{
+			mustRR("moodle.150.mpd.test. 60 IN A 10.163.150.2"), // legit, in zone
+			mustRR("151.mpd.test. 60 IN A 6.6.6.6"),             // another VM's zone
+			mustRR("example.com. 60 IN A 6.6.6.6"),              // outside domain
+		}
+		m.Ns = []dns.RR{
+			mustRR("mpd.test. 60 IN NS evil.150.mpd.test."), // above the VM's zone
+		}
+		m.Extra = []dns.RR{
+			mustRR("login.151.mpd.test. 60 IN A 6.6.6.6"), // cross-VM poison
+		}
+		_ = w.WriteMsg(m)
+	})
+	srv := &dns.Server{Addr: "127.0.0.1:0", Net: "udp", Handler: evil}
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.PacketConn = pc
+	go srv.ActivateAndServe()
+	t.Cleanup(func() { srv.Shutdown() })
+
+	f := NewForwarder()
+	f.SetRoute("150", pc.LocalAddr().String())
+
+	req := new(dns.Msg)
+	req.SetQuestion("moodle.150.mpd.test.", dns.TypeA)
+	w := &recordingWriter{}
+	f.ServeDNS(w, req)
+
+	if w.msg == nil {
+		t.Fatal("no reply written")
+	}
+	if len(w.msg.Answer) != 1 || w.msg.Answer[0].Header().Name != "moodle.150.mpd.test." {
+		t.Errorf("answer section = %v, want only moodle.150.mpd.test.", w.msg.Answer)
+	}
+	if len(w.msg.Ns) != 0 || len(w.msg.Extra) != 0 {
+		t.Errorf("authority/additional not stripped: ns=%v extra=%v", w.msg.Ns, w.msg.Extra)
 	}
 }
 

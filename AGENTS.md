@@ -37,6 +37,9 @@ simple tier); this is the daily-driver upgrade.
   gets NXDOMAIN, anything outside mpd.test is REFUSED, and nothing is ever
   forwarded to an outside resolver: internal names don't leak, and there is
   no resolution cycle even when the LAN's own DNS serves mpd.test names too.
+  Replies are sanitized to the VM's own zone: records for any other name
+  (another VM's zone, an outside domain) are stripped, so a compromised VM
+  can poison only names it already owns.
   Non-VM LAN hosts (`warp.mpd.test`, …) live in the Mac's `/etc/hosts`, which
   macOS consults before DNS, so they never reach the forwarder. A single
   `/etc/resolver/mpd.test` file points all of `*.mpd.test` at it — installed

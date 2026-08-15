@@ -96,7 +96,37 @@ func (f *Forwarder) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		refuse(w, req, dns.RcodeServerFailure)
 		return
 	}
+	nnn, _ := zoneID(qname) // ok: resolverFor already proved the name has a zone
+	sanitize(resp, nnn)
 	_ = w.WriteMsg(resp)
+}
+
+// sanitize strips every record outside the VM's own zone from a reply. A VM's
+// resolver is authoritative for <nnn>.mpd.test and nothing else, so records
+// for any other name — another VM's zone, an outside domain — can only be a
+// poisoning attempt by a compromised VM and are dropped from all three
+// sections, whatever bailiwick rules the client applies on its own. OPT
+// (EDNS) pseudo-records live at the root by definition and pass through.
+func sanitize(resp *dns.Msg, nnn string) {
+	keep := func(rrs []dns.RR) []dns.RR {
+		out := rrs[:0]
+		for _, rr := range rrs {
+			if rr.Header().Rrtype == dns.TypeOPT || inVMZone(rr.Header().Name, nnn) {
+				out = append(out, rr)
+			}
+		}
+		return out
+	}
+	resp.Answer = keep(resp.Answer)
+	resp.Ns = keep(resp.Ns)
+	resp.Extra = keep(resp.Extra)
+}
+
+// inVMZone reports whether name is <nnn>.mpd.test or below it.
+func inVMZone(name, nnn string) bool {
+	n := strings.ToLower(strings.TrimSuffix(name, "."))
+	zone := nnn + "." + mpdDomain
+	return n == zone || strings.HasSuffix(n, "."+zone)
 }
 
 // refuse answers req locally with the given rcode.
