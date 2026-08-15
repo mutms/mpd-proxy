@@ -19,12 +19,7 @@ Needs macOS, Go 1.26.5+, and `sudo`.
 ```sh
 make build install                     # → bin/mpd-proxy, ~/.local/bin/mpd-proxy
 
-sudo tee /etc/resolver/mpd.test <<'EOF' # route *.mpd.test lookups to the forwarder
-nameserver 127.0.0.1
-port 5354
-EOF
-
-sudo mpd-proxy up                      # foreground: utun + route, drops root, logs
+sudo mpd-proxy up                      # foreground: utun + route + /etc/resolver hook, drops root, logs
 
 # in another terminal, register each running VM with the fresh proxy:
 mpd-virt start <NNN>
@@ -32,9 +27,16 @@ mpd-virt start <NNN>
 open https://<NNN>.mpd.test/           # any browser, via the tunnel
 ```
 
-Restarting the proxy generates a fresh WireGuard key — re-run
-`mpd-virt start <NNN>` for each VM afterwards. `sudo mpd-proxy uninstall`
-removes every system trace.
+`up` installs `/etc/resolver/mpd.test` on first run (and leaves it alone
+afterwards), so `*.mpd.test` lookups reach the forwarder — no manual DNS
+setup. Restarting the proxy generates a fresh WireGuard key — re-run
+`mpd-virt start <NNN>` for each VM afterwards.
+
+## Uninstall
+
+`sudo mpd-proxy uninstall` stops a running proxy and removes every system
+trace — the `/etc/resolver` hook and a LaunchDaemon if present; the utun and
+route die with the process. `make uninstall` removes the installed binary.
 
 ## Documentation
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -57,6 +58,10 @@ func runUp(socketPath string) error {
 		return err
 	}
 	log.Printf("route %s → %s", mpdSubnet, name)
+
+	if err := ensureResolverFile(); err != nil {
+		return err
+	}
 
 	// --- DNS forwarder on a high port (no privilege). ---
 	fwd := NewForwarder()
@@ -118,6 +123,31 @@ func addRoute(cidr, iface string) error {
 	if err != nil {
 		return fmt.Errorf("route add %s → %s: %v: %s", cidr, iface, err, strings.TrimSpace(string(out)))
 	}
+	return nil
+}
+
+// ensureResolverFile installs the /etc/resolver hook that points *.mpd.test
+// at the forwarder. Part of the privileged setup: written only when missing
+// or different, so ordinary restarts never touch it; `uninstall` removes it.
+func ensureResolverFile() error {
+	host, port, err := net.SplitHostPort(dnsListen)
+	if err != nil {
+		return err
+	}
+	content := fmt.Sprintf("nameserver %s\nport %s\n", host, port)
+	if cur, err := os.ReadFile(resolverPath); err == nil && string(cur) == content {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(resolverPath), 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", filepath.Dir(resolverPath), err)
+	}
+	if err := os.WriteFile(resolverPath, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("write %s (run under sudo?): %w", resolverPath, err)
+	}
+	// Flush so macOS starts consulting the new hook right away.
+	_ = exec.Command("dscacheutil", "-flushcache").Run()
+	_ = exec.Command("killall", "-HUP", "mDNSResponder").Run()
+	log.Printf("installed %s (nameserver %s port %s)", resolverPath, host, port)
 	return nil
 }
 

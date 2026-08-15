@@ -39,8 +39,9 @@ simple tier); this is the daily-driver upgrade.
   no resolution cycle even when the LAN's own DNS serves mpd.test names too.
   Non-VM LAN hosts (`warp.mpd.test`, …) live in the Mac's `/etc/hosts`, which
   macOS consults before DNS, so they never reach the forwarder. A single
-  `/etc/resolver/mpd.test` file (README, First run) points all of
-  `*.mpd.test` at it — created once, never touched again as VMs come and go.
+  `/etc/resolver/mpd.test` file points all of `*.mpd.test` at it — installed
+  by `up` during privileged setup (only when missing or different), never
+  touched again as VMs come and go; `uninstall` removes it.
 
 The only value that changes — an Apple-container or Parallels DHCP lease —
 lives solely in a peer's `endpoint`, rewritten in place; everything id-keyed
@@ -53,8 +54,9 @@ are pending; today `up` is started by hand and runs in the foreground.
 
 ## What root is for
 
-`sudo` is needed for exactly two syscall clusters at startup: creating the
-utun and installing the `10.163.0.0/16` route. Immediately after, the process
+`sudo` is needed for three things at startup: creating the utun, installing
+the `10.163.0.0/16` route, and writing the `/etc/resolver/mpd.test` hook
+(first run only — skipped when already in place). Immediately after, the process
 drops to the invoking user (OpenSSH-style privsep) — the WireGuard engine,
 DNS forwarder, and control socket all run unprivileged. What an authorized
 socket client can do is bounded by the overlay itself: add/remove WireGuard
@@ -124,7 +126,8 @@ cleanly.
 ## Troubleshooting
 
 - **`*.mpd.test` doesn't resolve** — check `/etc/resolver/mpd.test` exists
-  and `scutil --dns | grep -A2 mpd.test` shows it; then check the proxy log
+  (restarting `sudo mpd-proxy up` recreates it) and
+  `scutil --dns | grep -A2 mpd.test` shows it; then check the proxy log
   for the VM's route. NXDOMAIN for a VM name means it isn't registered — run
   `mpd-virt start <NNN>`.
 - **Resolves but doesn't connect** — the proxy was probably restarted after
