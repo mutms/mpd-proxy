@@ -8,8 +8,9 @@ import (
 
 const (
 	resolverPath = "/etc/resolver/mpd.test"
-	// launchdPath is where a boot-install would drop the LaunchDaemon (not yet
-	// built); removed here if present so uninstall is forward-compatible.
+	// launchdPath is where a LaunchDaemon would live. Boot start is not
+	// planned — mpd-proxy is a hand-started CLI tool for developers — but
+	// uninstall still sweeps the path in case someone hand-rolled one.
 	launchdPath = "/Library/LaunchDaemons/test.mpd-proxy.plist"
 )
 

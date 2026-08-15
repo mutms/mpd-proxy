@@ -31,8 +31,8 @@ const (
 // reason to be quiet.
 func runUp(socketPath string) error {
 	// Privsep is not optional: refuse to start when there is no user to drop
-	// to. Under sudo the invoking user arrives in SUDO_UID; bare root (a
-	// LaunchDaemon, say) would need an explicit target-user flag added first.
+	// to. Under sudo the invoking user arrives in SUDO_UID; bare root has
+	// none and is refused — mpd-proxy is always started by hand via sudo.
 	uid, gid := invokingUID(), invokingGID()
 	if os.Geteuid() == 0 && uid == 0 {
 		return fmt.Errorf("no user to drop privileges to — run via sudo, not as bare root")

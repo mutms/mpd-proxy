@@ -52,8 +52,13 @@ lives solely in a peer's `endpoint`, rewritten in place; everything id-keyed
 
 **The key is ephemeral.** mpd-proxy generates a fresh WireGuard keypair on
 every start, so after a restart each VM must be re-authorized — re-run
-`mpd-virt start <NNN>` per VM. A persisted key, and a LaunchDaemon for boot,
-are pending; today `up` is started by hand and runs in the foreground.
+`mpd-virt start <NNN>` per VM; a restart thereby also revokes every earlier
+authorization, which is a feature, not a gap. `up` is started by hand and
+runs in the foreground, and that too is the design: mpd-proxy is a CLI tool
+for developers, so boot-time start (a LaunchDaemon) is **not planned**, and
+neither is a persisted key. For occasional single-VM use, don't run
+mpd-proxy at all — mpd-virt's SOCKS-over-SSH tier in a dedicated browser
+(Firefox with remote DNS) is perfectly fine.
 
 ## What root is for
 

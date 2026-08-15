@@ -5,7 +5,10 @@ one WireGuard tunnel plus a split-DNS forwarder, so every `*.mpd.test` site
 served by your [mpd](https://github.com/mutms/mpd) VMs works transparently in
 every app on the Mac — several VMs at once, no per-VM routes, no browser proxy
 settings. It is the only piece of the mpd family that needs `sudo`, and it is
-optional: mpd-virt's SOCKS-over-SSH tier covers occasional use without it.
+optional: for occasional single-VM use, mpd-virt's SOCKS-over-SSH tier in a
+dedicated browser (Firefox) is perfectly fine with no mpd-proxy running at
+all. A hand-started CLI tool for developers by design — it runs in the
+foreground, and boot-time start (a LaunchDaemon) is not planned.
 
 Root is used for exactly two things at startup — create the utun, add one
 `10.163.0.0/16` route — then the process drops to the invoking user. DNS
