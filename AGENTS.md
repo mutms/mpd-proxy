@@ -60,10 +60,11 @@ are pending; today `up` is started by hand and runs in the foreground.
 `sudo` is needed for three things at startup: creating the utun, installing
 the `10.163.0.0/16` route, and writing the `/etc/resolver/mpd.test` hook
 (first run only — skipped when already in place). Immediately after, the process
-drops to the invoking user (OpenSSH-style privsep) — the WireGuard engine,
-DNS forwarder, and control socket all run unprivileged. The drop is
-mandatory: a failed drop is fatal, and starting as bare root (no `SUDO_UID`,
-so no user to drop to) is refused outright. What an authorized socket client
+drops to the invoking user (OpenSSH-style privsep) — the WireGuard engine
+keeps its root-made utun, and the DNS forwarder and control socket are
+created *after* the drop, so they run unprivileged and the socket is never
+even root-owned. The drop is mandatory: a failed drop is fatal, and starting
+as bare root (no `SUDO_UID`, so no user to drop to) is refused outright. What an authorized socket client
 can do is bounded by the overlay itself, and the proxy enforces the bound
 rather than trusting the client: an `add` is rejected unless its
 `allowed_ips` sit inside the id's own `10.163.<NNN>.0/24` and its `resolver`
