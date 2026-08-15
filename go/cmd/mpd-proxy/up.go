@@ -48,25 +48,25 @@ func runUp(socketPath string) error {
 	if err != nil {
 		return fmt.Errorf("create utun (run under sudo?): %w", err)
 	}
-	name, _ := dev.Name()
+	utunName, _ := dev.Name()
 	tn, err := NewTunnel(dev, priv, 0)
 	if err != nil {
 		return err
 	}
 	defer tn.Close() // closing the utun also drops its address + route
-	log.Printf("utun %s up", name)
+	log.Printf("utun %s up", utunName)
 
 	// A point-to-point utun needs an address before the kernel will route a
 	// subnet into it.
-	if err := assignAddr(name, clientAddr); err != nil {
+	if err := assignAddr(utunName, clientAddr); err != nil {
 		return err
 	}
-	log.Printf("address %s on %s", clientAddr, name)
+	log.Printf("address %s on %s", clientAddr, utunName)
 
-	if err := addRoute(mpdSubnet, name); err != nil {
+	if err := addRoute(mpdSubnet, utunName); err != nil {
 		return err
 	}
-	log.Printf("route %s → %s", mpdSubnet, name)
+	log.Printf("route %s → %s", mpdSubnet, utunName)
 
 	if err := ensureResolverFile(); err != nil {
 		return err
@@ -113,7 +113,7 @@ func runUp(socketPath string) error {
 	go ctrl.Serve(ln)
 	log.Printf("control socket %s (uid %d may connect)", socketPath, uid)
 
-	log.Printf("mpd-proxy up on %s — logging all control commands. Ctrl-C to stop.", name)
+	log.Printf("mpd-proxy up on %s — logging all control commands. Ctrl-C to stop.", utunName)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
@@ -124,10 +124,10 @@ func runUp(socketPath string) error {
 // assignAddr gives the utun the Mac's overlay address (local == peer for a
 // host-style point-to-point link), which is what makes a subnet route into
 // the interface actually take.
-func assignAddr(name, addr string) error {
-	out, err := exec.Command("ifconfig", name, "inet", addr, addr, "alias").CombinedOutput()
+func assignAddr(iface, addr string) error {
+	out, err := exec.Command("ifconfig", iface, "inet", addr, addr, "alias").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ifconfig %s %s: %v: %s", name, addr, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("ifconfig %s %s: %v: %s", iface, addr, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
