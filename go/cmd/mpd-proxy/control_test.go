@@ -80,3 +80,47 @@ func TestControlSocket(t *testing.T) {
 		t.Errorf("route not cleared: still resolves to %q", got)
 	}
 }
+
+// TestAddValidation checks that the controller enforces the overlay bounds
+// itself: an add whose id, allowed_ips, resolver, or endpoint fall outside
+// the VM's slice of 10.163.0.0/16 is rejected before touching the tunnel or
+// the forwarder — the documented boundary must not depend on trusting the
+// client.
+func TestAddValidation(t *testing.T) {
+	tun, _ := newNetTunnel(t, "10.99.1.2", 59001, mustKey(t))
+	ctrl := NewController(mustKey(t), tun, NewForwarder(), os.Getuid())
+
+	good := Request{
+		Op: "add", ID: "181", PublicKey: mustKey(t).PublicKey().String(),
+		Endpoint: "127.0.0.1:51820", AllowedIPs: []string{"10.163.181.0/24"},
+		Resolver: "10.163.181.1:53",
+	}
+	if r := ctrl.handle(good); !r.OK {
+		t.Fatalf("in-bounds add rejected: %+v", r)
+	}
+
+	bad := []struct {
+		name   string
+		mutate func(*Request)
+	}{
+		{"non-numeric id", func(r *Request) { r.ID = "www" }},
+		{"empty id", func(r *Request) { r.ID = "" }},
+		{"id zero", func(r *Request) { r.ID = "0" }},
+		{"id with leading zero", func(r *Request) { r.ID = "081" }},
+		{"no allowed_ips", func(r *Request) { r.AllowedIPs = nil }},
+		{"allowed_ip catch-all", func(r *Request) { r.AllowedIPs = []string{"0.0.0.0/0"} }},
+		{"allowed_ip in another VM's subnet", func(r *Request) { r.AllowedIPs = []string{"10.163.150.0/24"} }},
+		{"allowed_ip wider than the VM's /24", func(r *Request) { r.AllowedIPs = []string{"10.163.0.0/16"} }},
+		{"resolver outside the overlay", func(r *Request) { r.Resolver = "8.8.8.8:53" }},
+		{"resolver pointing back at the forwarder", func(r *Request) { r.Resolver = "127.0.0.1:5354" }},
+		{"resolver in another VM's subnet", func(r *Request) { r.Resolver = "10.163.150.1:53" }},
+		{"endpoint not ip:port", func(r *Request) { r.Endpoint = "not-an-endpoint" }},
+	}
+	for _, tc := range bad {
+		req := good
+		tc.mutate(&req)
+		if r := ctrl.handle(req); r.OK {
+			t.Errorf("%s: accepted %+v", tc.name, req)
+		}
+	}
+}

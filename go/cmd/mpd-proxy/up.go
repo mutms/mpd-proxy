@@ -29,6 +29,13 @@ const (
 // socket, then drop root and block until Ctrl-C. Every control command is
 // logged — the ops are rare, so there's no reason to be quiet.
 func runUp(socketPath string) error {
+	// Privsep is not optional: refuse to start when there is no user to drop
+	// to. Under sudo the invoking user arrives in SUDO_UID; bare root (a
+	// LaunchDaemon, say) would need an explicit target-user flag added first.
+	if os.Geteuid() == 0 && invokingUID() == 0 {
+		return fmt.Errorf("no user to drop privileges to — run via sudo, not as bare root")
+	}
+
 	priv, err := wgtypes.GeneratePrivateKey()
 	if err != nil {
 		return err
@@ -90,12 +97,12 @@ func runUp(socketPath string) error {
 	go ctrl.Serve(ln)
 	log.Printf("control socket %s (uid %d may connect)", socketPath, uid)
 
-	// --- Drop root: everything privileged is already done. ---
+	// --- Drop root: everything privileged is already done. A failed drop is
+	// fatal — serving the socket and forwarder as root is not a mode we run in.
 	if err := dropPrivileges(uid, gid); err != nil {
-		log.Printf("warning: staying root, could not drop privileges: %v", err)
-	} else {
-		log.Printf("dropped root → uid %d", uid)
+		return fmt.Errorf("dropping privileges: %w", err)
 	}
+	log.Printf("dropped root → uid %d", uid)
 
 	log.Printf("mpd-proxy up on %s — logging all control commands. Ctrl-C to stop.", name)
 	sig := make(chan os.Signal, 1)
@@ -170,7 +177,9 @@ func dropPrivileges(uid, gid int) error {
 	if os.Geteuid() != 0 {
 		return nil // not root; nothing to drop
 	}
-	_ = syscall.Setgroups([]int{gid})
+	if err := syscall.Setgroups([]int{gid}); err != nil {
+		return fmt.Errorf("setgroups: %w", err)
+	}
 	if err := syscall.Setgid(gid); err != nil {
 		return fmt.Errorf("setgid: %w", err)
 	}

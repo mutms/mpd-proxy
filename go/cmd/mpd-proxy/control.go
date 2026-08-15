@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/netip"
+	"strconv"
 	"sync"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -126,7 +128,57 @@ func (c *Controller) handle(req Request) Response {
 	}
 }
 
+// validateAdd enforces the overlay contract before anything is applied: the
+// id names a VM (1–254), every allowed_ip sits inside that VM's own
+// 10.163.<id>.0/24, and the resolver — when given — is an address in the same
+// subnet. mpd-virt derives all of these from the id anyway; re-checking them
+// here means a buggy or compromised client cannot widen WireGuard's inbound
+// source filter beyond the VM's slice of the overlay, leak mpd.test queries
+// to an outside resolver, or point the forwarder back at itself.
+func validateAdd(req Request) error {
+	nnn, err := strconv.Atoi(req.ID)
+	if err != nil || strconv.Itoa(nnn) != req.ID || nnn < 1 || nnn > 254 {
+		return fmt.Errorf("bad id %q: want a VM number 1-254", req.ID)
+	}
+	vmSubnet := netip.PrefixFrom(netip.AddrFrom4([4]byte{10, 163, byte(nnn), 0}), 24)
+
+	if len(req.AllowedIPs) == 0 {
+		return fmt.Errorf("allowed_ips must not be empty")
+	}
+	for _, s := range req.AllowedIPs {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			return fmt.Errorf("bad allowed_ip %q: %v", s, err)
+		}
+		if p.Bits() < vmSubnet.Bits() || !vmSubnet.Contains(p.Masked().Addr()) {
+			return fmt.Errorf("allowed_ip %q outside the VM's subnet %s", s, vmSubnet)
+		}
+	}
+
+	// The endpoint is a LAN DHCP lease, so it cannot be bounded to the
+	// overlay — but it must at least be a literal ip:port.
+	if req.Endpoint != "" {
+		if _, err := netip.ParseAddrPort(req.Endpoint); err != nil {
+			return fmt.Errorf("bad endpoint %q: %v", req.Endpoint, err)
+		}
+	}
+
+	if req.Resolver != "" {
+		ap, err := netip.ParseAddrPort(req.Resolver)
+		if err != nil {
+			return fmt.Errorf("bad resolver %q: %v", req.Resolver, err)
+		}
+		if !vmSubnet.Contains(ap.Addr()) {
+			return fmt.Errorf("resolver %q outside the VM's subnet %s", req.Resolver, vmSubnet)
+		}
+	}
+	return nil
+}
+
 func (c *Controller) add(req Request) Response {
+	if err := validateAdd(req); err != nil {
+		return Response{Error: err.Error()}
+	}
 	key, err := wgtypes.ParseKey(req.PublicKey)
 	if err != nil {
 		return Response{Error: "bad public_key: " + err.Error()}

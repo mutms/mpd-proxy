@@ -58,10 +58,14 @@ are pending; today `up` is started by hand and runs in the foreground.
 the `10.163.0.0/16` route, and writing the `/etc/resolver/mpd.test` hook
 (first run only — skipped when already in place). Immediately after, the process
 drops to the invoking user (OpenSSH-style privsep) — the WireGuard engine,
-DNS forwarder, and control socket all run unprivileged. What an authorized
-socket client can do is bounded by the overlay itself: add/remove WireGuard
-peers and DNS routes inside `10.163.0.0/16` / `*.mpd.test`. It cannot make
-mpd-proxy read files, touch other routes, or resolve other domains.
+DNS forwarder, and control socket all run unprivileged. The drop is
+mandatory: a failed drop is fatal, and starting as bare root (no `SUDO_UID`,
+so no user to drop to) is refused outright. What an authorized socket client
+can do is bounded by the overlay itself, and the proxy enforces the bound
+rather than trusting the client: an `add` is rejected unless its
+`allowed_ips` sit inside the id's own `10.163.<NNN>.0/24` and its `resolver`
+is an address in that same subnet. It cannot make mpd-proxy read files,
+touch other routes, or resolve other domains.
 
 ## Control protocol
 
@@ -83,7 +87,9 @@ failures come back as `ok:false` with an `error` string.
 
 mpd-proxy is a dumb plumber: mpd-virt derives `allowed_ips`
 (`10.163.<NNN>.0/24` — the whole container subnet) and `resolver` (`10.163.<NNN>.1:53`)
-from the id and sends them; mpd-proxy just applies what it is handed. It has
+from the id and sends them; mpd-proxy applies what it is handed after
+verifying it stays inside the id's own `/24` (`add` is rejected otherwise —
+the overlay bound holds even against a misbehaving client). It has
 its own keypair and hands out the public half via `pubkey` — mpd-virt
 authorizes that on each VM's WireGuard endpoint at takeover, and the VM's key
 comes back in `add`.
