@@ -16,7 +16,7 @@ func main() {
 	switch os.Args[1] {
 	case "up":
 		fs := flag.NewFlagSet("up", flag.ExitOnError)
-		socket := fs.String("socket", defaultSocket, "control socket path")
+		socket := fs.String("socket", "", "control socket path (default: ~/.mpd-virt/proxy/socket of the sudo user)")
 		_ = fs.Parse(os.Args[2:])
 		if err := runUp(*socket); err != nil {
 			log.Fatal(err)

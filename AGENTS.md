@@ -69,8 +69,12 @@ touch other routes, or resolve other domains.
 
 ## Control protocol
 
-Newline-delimited JSON over the unix socket (default `/tmp/mpd-proxy.sock`) —
-a connection may carry several requests, each answered in order. Every
+Newline-delimited JSON over the unix socket (default
+`~/.mpd-virt/proxy/socket` in the sudo user's home, `--socket` overrides) —
+a connection may carry several requests, each answered in order. The socket
+sits inside mpd-virt's own state directory because mpd-virt is the only
+client; the `proxy/` dir is user-owned mode `0700`, so other users cannot
+reach the socket at all — a filesystem wall in front of the peer-uid gate. Every
 connection is gated on the kernel-reported peer uid (`LOCAL_PEERCRED`): the
 user who invoked `sudo mpd-proxy up`, or root, may connect; everyone else is
 dropped.

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,10 +19,9 @@ import (
 )
 
 const (
-	defaultSocket = "/tmp/mpd-proxy.sock"
-	mpdSubnet     = "10.163.0.0/16"
-	clientAddr    = "10.163.0.1" // the Mac's own address in the mpd overlay (10.163.0.x is unused by VMs)
-	dnsListen     = "127.0.0.1:5354"
+	mpdSubnet  = "10.163.0.0/16"
+	clientAddr = "10.163.0.1" // the Mac's own address in the mpd overlay (10.163.0.x is unused by VMs)
+	dnsListen  = "127.0.0.1:5354"
 )
 
 // runUp brings the whole proxy up in the foreground: create the utun and the
@@ -32,7 +32,8 @@ func runUp(socketPath string) error {
 	// Privsep is not optional: refuse to start when there is no user to drop
 	// to. Under sudo the invoking user arrives in SUDO_UID; bare root (a
 	// LaunchDaemon, say) would need an explicit target-user flag added first.
-	if os.Geteuid() == 0 && invokingUID() == 0 {
+	uid, gid := invokingUID(), invokingGID()
+	if os.Geteuid() == 0 && uid == 0 {
 		return fmt.Errorf("no user to drop privileges to — run via sudo, not as bare root")
 	}
 
@@ -81,8 +82,14 @@ func runUp(socketPath string) error {
 	defer dnsSrv.Shutdown()
 	log.Printf("DNS forwarder on %s (routed mpd.test zones only — no upstream)", dnsListen)
 
-	// --- Control socket, reachable by the invoking user after we drop root. ---
-	uid, gid := invokingUID(), invokingGID()
+	// --- Control socket in the user's own ~/.mpd-virt/proxy/, reachable by
+	// the invoking user after we drop root. ---
+	if socketPath == "" {
+		socketPath, err = defaultSocketPath(uid, gid)
+		if err != nil {
+			return err
+		}
+	}
 	_ = os.Remove(socketPath)
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
 	if err != nil {
@@ -91,7 +98,7 @@ func runUp(socketPath string) error {
 	defer ln.Close()
 	defer os.Remove(socketPath)
 	_ = os.Chown(socketPath, uid, gid)
-	_ = os.Chmod(socketPath, 0o660)
+	_ = os.Chmod(socketPath, 0o600)
 
 	ctrl := NewController(priv, tn, fwd, uid)
 	go ctrl.Serve(ln)
@@ -156,6 +163,41 @@ func ensureResolverFile() error {
 	_ = exec.Command("killall", "-HUP", "mDNSResponder").Run()
 	log.Printf("installed %s (nameserver %s port %s)", resolverPath, host, port)
 	return nil
+}
+
+// defaultSocketPath is ~/.mpd-virt/proxy/socket for the invoking user —
+// inside mpd-virt's own state directory, since mpd-virt is the only client.
+// It creates the proxy/ dir user-owned with mode 0700, so no other user can
+// even reach the socket: filesystem permissions become a second wall in
+// front of the per-connection peer-uid gate (and unlike /tmp, no other
+// user can play games with the path, and macOS's periodic /tmp cleanup
+// can't reap a long-lived socket). The home comes from the user database,
+// not $HOME — sudo may reset $HOME to root's.
+func defaultSocketPath(uid, gid int) (string, error) {
+	u, err := user.LookupId(strconv.Itoa(uid))
+	if err != nil || u.HomeDir == "" {
+		return "", fmt.Errorf("resolving home of uid %d for the control socket (or pass --socket): %v", uid, err)
+	}
+	root := filepath.Join(u.HomeDir, ".mpd-virt")
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		// mpd-virt hasn't run yet — create its root the way it would.
+		if err := os.Mkdir(root, 0o755); err != nil {
+			return "", err
+		}
+		_ = os.Chown(root, uid, gid)
+	}
+	dir := filepath.Join(root, "proxy")
+	if err := os.Mkdir(dir, 0o700); err != nil && !os.IsExist(err) {
+		return "", err
+	}
+	// Re-assert ownership and mode on every start — this dir is ours.
+	if err := os.Chown(dir, uid, gid); err != nil {
+		return "", fmt.Errorf("chown %s: %w", dir, err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return "", fmt.Errorf("chmod %s: %w", dir, err)
+	}
+	return filepath.Join(dir, "socket"), nil
 }
 
 // invokingUID/GID recover the real user behind sudo, for the privsep drop.
