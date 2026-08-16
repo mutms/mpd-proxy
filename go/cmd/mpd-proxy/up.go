@@ -49,12 +49,15 @@ func runUp() error {
 		return fmt.Errorf("create utun (run under sudo?): %w", err)
 	}
 	utunName, _ := dev.Name()
-	tn, err := NewTunnel(dev, priv, 0)
+	// The guard sits between WireGuard's decrypt and the kernel: VMs are
+	// assumed compromised, so only replies to Mac-initiated traffic may
+	// come in — a VM must never reach a listener on the Mac (filter.go).
+	tn, err := NewTunnel(guardInbound(dev), priv, 0)
 	if err != nil {
 		return err
 	}
 	defer tn.Close() // closing the utun also drops its address + route
-	log.Printf("utun %s up", utunName)
+	log.Printf("utun %s up (inbound guard: VM-initiated connections dropped)", utunName)
 
 	// A point-to-point utun needs an address before the kernel will route a
 	// subnet into it.

@@ -33,6 +33,17 @@ simple tier); this is the daily-driver upgrade.
   below the id range, are unused), and no VM subnet lives there.
 - **One aggregate route.** `10.163.0.0/16 → utun`, installed once. A new VM's
   `/24` is already covered, so adopting a VM needs no new route and no `sudo`.
+- **Inbound guard: replies only.** mpd's threat model calls every VM
+  compromised, and WireGuard alone has no notion of direction — a peer could
+  initiate connections to `10.163.0.1` and reach any Mac listener bound to
+  `0.0.0.0` (dev servers, debug ports). `filter.go` wraps the utun inside the
+  WireGuard device and drops everything inbound except replies to
+  Mac-initiated traffic: TCP connection-opening SYNs are dropped (all other
+  segments pass, so established flows never stall), UDP is admitted only as
+  the reverse of a tracked outbound flow (DNS, QUIC), ICMP only as
+  reply/error types, and fragments past the first (or too short for their
+  transport header) are dropped. All in this process, on the decrypted
+  cleartext — no pf anchor, nothing else to install or clean up.
 - **Split DNS, mpd.test only.** A UDP forwarder on `127.0.0.1:5354` sends
   `<NNN>.mpd.test` to that VM's own resolver (`10.163.<NNN>.1`) through the
   tunnel — and that is all it does. An mpd.test name with no registered VM
@@ -117,6 +128,7 @@ sitting:
 - `main.go` — the two verbs: `up`, `uninstall`; no flags
 - `up.go` — privileged setup (utun, address, route), then privsep drop
 - `tunnel.go` — the embedded wireguard-go device and its UAPI config
+- `filter.go` — the inbound guard on the utun (replies only; see above)
 - `dns.go` — the split-horizon forwarder (routed zones only, no upstream)
 - `control.go` — the unix-socket protocol and peer-uid gate
 - `peercreds_darwin.go` — `LOCAL_PEERCRED`; the one OS-specific file. A Linux
