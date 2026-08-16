@@ -27,8 +27,10 @@ simple tier); this is the daily-driver upgrade.
   (project URLs are served at container IPs; the in-VM firewall admits wg0
   and seals the subnet from the LAN only). WireGuard's cryptokey
   routing demuxes each packet to the right VM. The Mac's own overlay address
-  is `10.163.0.1` (the `10.163.0.x` net is unused by VMs), which is exactly
-  what each VM's firewall allow-lists.
+  is `10.163.0.1`, which is exactly what each VM's firewall allow-lists.
+  The `10.163.0.0/24` net is dedicated to WireGuard endpoint addresses:
+  the Mac is `.1`, each VM's own `wg0` sits at `.<NNN>` (so `.2`–`.99`,
+  below the id range, are unused), and no VM subnet lives there.
 - **One aggregate route.** `10.163.0.0/16 → utun`, installed once. A new VM's
   `/24` is already covered, so adopting a VM needs no new route and no `sudo`.
 - **Split DNS, mpd.test only.** A UDP forwarder on `127.0.0.1:5354` sends

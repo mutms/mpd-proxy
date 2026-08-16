@@ -20,7 +20,7 @@ import (
 
 const (
 	mpdSubnet  = "10.163.0.0/16"
-	clientAddr = "10.163.0.1" // the Mac's own address in the mpd overlay (10.163.0.x is unused by VMs)
+	clientAddr = "10.163.0.1" // the Mac in 10.163.0.0/24, the net dedicated to WireGuard endpoints (VMs' wg0 sit at .NNN)
 	dnsListen  = "127.0.0.1:5354"
 )
 
