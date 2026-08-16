@@ -19,7 +19,7 @@ func TestZoneID(t *testing.T) {
 		"moodle.150.mpd.test.":          {"150", true},
 		"adminer.service.181.mpd.test.": {"181", true},
 		"MOODLE.150.MPD.TEST":           {"150", true}, // case-insensitive, no trailing dot
-		"001.mpd.test.":                 {"001", true}, // zero-padded ids
+		"254.mpd.test.":                 {"254", true}, // top of the id range
 		"example.com.":                  {"", false},
 		"mpd.test.":                     {"", false}, // the apex has no id label
 		"":                              {"", false},

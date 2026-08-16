@@ -129,16 +129,17 @@ func (c *Controller) handle(req Request) Response {
 }
 
 // validateAdd enforces the overlay contract before anything is applied: the
-// id names a VM (1–254), every allowed_ip sits inside that VM's own
-// 10.163.<id>.0/24, and the resolver — when given — is an address in the same
-// subnet. mpd-virt derives all of these from the id anyway; re-checking them
-// here means a buggy or compromised client cannot widen WireGuard's inbound
-// source filter beyond the VM's slice of the overlay, leak mpd.test queries
-// to an outside resolver, or point the forwarder back at itself.
+// id names a VM (100–254 — always three digits, the family-wide id range),
+// every allowed_ip sits inside that VM's own 10.163.<id>.0/24, and the
+// resolver — when given — is an address in the same subnet. mpd-virt derives
+// all of these from the id anyway; re-checking them here means a buggy or
+// compromised client cannot widen WireGuard's inbound source filter beyond
+// the VM's slice of the overlay, leak mpd.test queries to an outside
+// resolver, or point the forwarder back at itself.
 func validateAdd(req Request) error {
 	nnn, err := strconv.Atoi(req.ID)
-	if err != nil || strconv.Itoa(nnn) != req.ID || nnn < 1 || nnn > 254 {
-		return fmt.Errorf("bad id %q: want a VM number 1-254", req.ID)
+	if err != nil || strconv.Itoa(nnn) != req.ID || nnn < 100 || nnn > 254 {
+		return fmt.Errorf("bad id %q: want a VM number 100-254", req.ID)
 	}
 	vmSubnet := netip.PrefixFrom(netip.AddrFrom4([4]byte{10, 163, byte(nnn), 0}), 24)
 
