@@ -6,6 +6,9 @@ import (
 	"os"
 )
 
+// version is stamped at build time via -ldflags.
+var version = "dev"
+
 func main() {
 	log.SetFlags(log.Ltime)
 
@@ -24,6 +27,8 @@ func main() {
 		if err := runUninstall(); err != nil {
 			log.Fatal(err)
 		}
+	case "version", "--version", "-v":
+		fmt.Println(version)
 	default:
 		usage()
 	}
@@ -32,5 +37,6 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: sudo mpd-proxy up")
 	fmt.Fprintln(os.Stderr, "       sudo mpd-proxy uninstall")
+	fmt.Fprintln(os.Stderr, "       mpd-proxy version")
 	os.Exit(2)
 }
