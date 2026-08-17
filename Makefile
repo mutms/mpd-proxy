@@ -34,7 +34,7 @@ build:
 # to be uploaded by mistake.
 build-static:
 	rm -rf $(CURDIR)/dist
-	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(CURDIR)/dist/mpd-proxy-$(VERSION)-darwin-arm64 ./cmd/mpd-proxy
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(CURDIR)/dist/mpd-proxy-$(VERSION)-macos-arm64 ./cmd/mpd-proxy
 
 install: build
 	@mkdir -p "$(BINDIR)"
