@@ -2,7 +2,10 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"log"
+	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -204,10 +207,58 @@ func (g *inboundGuard) countDrop(pkt []byte) {
 	}
 	g.mu.Unlock()
 	if now.Sub(last) >= time.Second {
-		proto := -1
-		if len(pkt) >= 20 {
-			proto = int(pkt[9])
-		}
-		log.Printf("guard: dropped VM-initiated inbound packet (proto %d, %d dropped total)", proto, drops)
+		log.Printf("guard: dropped VM-initiated inbound packet — %s (%d dropped total)", describeDrop(pkt), drops)
 	}
+}
+
+// describeDrop summarizes a dropped packet enough to name the flow the guard is
+// refusing — proto, addresses and ports, and for TCP the flags — so an
+// over-eager rule shows up in the log by name rather than as a bare "proto N".
+// A DNS reply wrongly dropped reads as `udp 10.163.<NNN>.1:53 → 10.163.0.1:<p>`;
+// a dropped continuation fragment says so. Best-effort on a malformed packet.
+func describeDrop(pkt []byte) string {
+	ihl, ok := ipv4Header(pkt)
+	if !ok {
+		return "non-IPv4"
+	}
+	src, dst := net.IP(pkt[12:16]), net.IP(pkt[16:20])
+	if fragOffset(pkt) != 0 {
+		return fmt.Sprintf("proto %d %s → %s (ipv4 fragment)", pkt[9], src, dst)
+	}
+	switch pkt[9] {
+	case 6: // TCP
+		if len(pkt) >= ihl+14 {
+			return fmt.Sprintf("tcp %s:%d → %s:%d flags=%s", src, binary.BigEndian.Uint16(pkt[ihl:]),
+				dst, binary.BigEndian.Uint16(pkt[ihl+2:]), tcpFlags(pkt[ihl+13]))
+		}
+	case 17: // UDP
+		if len(pkt) >= ihl+8 {
+			return fmt.Sprintf("udp %s:%d → %s:%d", src, binary.BigEndian.Uint16(pkt[ihl:]),
+				dst, binary.BigEndian.Uint16(pkt[ihl+2:]))
+		}
+	case 1: // ICMP
+		if len(pkt) >= ihl+1 {
+			return fmt.Sprintf("icmp type %d %s → %s", pkt[ihl], src, dst)
+		}
+	}
+	return fmt.Sprintf("proto %d %s → %s", pkt[9], src, dst)
+}
+
+// tcpFlags renders the TCP flag bits that matter to the guard's decision, so a
+// dropped segment shows whether it was a bare SYN (a VM opening a connection —
+// what the guard is meant to drop) or something the rule caught by mistake.
+func tcpFlags(b byte) string {
+	var set []string
+	for _, f := range []struct {
+		bit  byte
+		name string
+	}{{0x02, "SYN"}, {0x10, "ACK"}, {0x01, "FIN"}, {0x04, "RST"}, {0x08, "PSH"}, {0x20, "URG"}} {
+		if b&f.bit != 0 {
+			set = append(set, f.name)
+		}
+	}
+	if len(set) == 0 {
+		return "none"
+	}
+	return strings.Join(set, ",")
 }
