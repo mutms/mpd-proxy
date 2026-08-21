@@ -29,7 +29,16 @@ const (
 // DNS forwarder + the control socket as the invoking user and block until
 // Ctrl-C. Every control command is logged — the ops are rare, so there's no
 // reason to be quiet.
-func runUp() error {
+//
+// disableFilter drops the inbound guard (filter.go) for this run. It exists
+// only to rule the filter out while chasing a dropped connection: with it off,
+// the Mac is reachable from every VM peer, so it is never a mode to leave
+// running — hence the loud warning below rather than a quiet toggle.
+func runUp(disableFilter bool) error {
+	// The version is the first thing in the log, so a saved log always says
+	// which build produced it — the ask that made this a startup line.
+	log.Printf("mpd-proxy %s", version)
+
 	// Privsep is not optional: refuse to start when there is no user to drop
 	// to. Under sudo the invoking user arrives in SUDO_UID; bare root has
 	// none and is refused — mpd-proxy is always started by hand via sudo.
@@ -52,12 +61,22 @@ func runUp() error {
 	// The guard sits between WireGuard's decrypt and the kernel: VMs are
 	// assumed compromised, so only replies to Mac-initiated traffic may
 	// come in — a VM must never reach a listener on the Mac (filter.go).
-	tn, err := NewTunnel(guardInbound(dev), priv, 0)
+	// --disable-wg-filter removes it for the run; loud, because with it off
+	// any VM can open a connection to a service on the Mac.
+	device := dev
+	guardNote := "inbound guard: VM-initiated connections dropped"
+	if disableFilter {
+		guardNote = "inbound guard: DISABLED (--disable-wg-filter)"
+		log.Printf("⚠ WARNING: WireGuard inbound guard DISABLED — the Mac is reachable from every VM peer. Debugging only; do not leave running.")
+	} else {
+		device = guardInbound(dev)
+	}
+	tn, err := NewTunnel(device, priv, 0)
 	if err != nil {
 		return err
 	}
 	defer tn.Close() // closing the utun also drops its address + route
-	log.Printf("utun %s up (inbound guard: VM-initiated connections dropped)", utunName)
+	log.Printf("utun %s up (%s)", utunName, guardNote)
 
 	// A point-to-point utun needs an address before the kernel will route a
 	// subnet into it.

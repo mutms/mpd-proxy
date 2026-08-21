@@ -44,6 +44,10 @@ simple tier); this is the daily-driver upgrade.
   reply/error types, and fragments past the first (or too short for their
   transport header) are dropped. All in this process, on the decrypted
   cleartext — no pf anchor, nothing else to install or clean up.
+  `sudo mpd-proxy up --disable-wg-filter` drops the guard for that run — a
+  debugging escape hatch to rule the filter out as the cause of a dropped
+  connection. With it off the Mac is reachable from every VM peer, so it
+  logs a loud warning and is never a mode to leave running.
 - **Split DNS, mpd.test only.** A UDP forwarder on `127.0.0.1:5354` sends
   `<NNN>.mpd.test` to that VM's own resolver (`10.163.<NNN>.1`) through the
   tunnel — and that is all it does. An mpd.test name with no registered VM

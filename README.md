@@ -33,7 +33,13 @@ open https://<NNN>.mpd.test/           # any browser, via the tunnel
 `up` installs `/etc/resolver/mpd.test` on first run (and leaves it alone
 afterwards), so `*.mpd.test` lookups reach the forwarder — no manual DNS
 setup. Restarting the proxy generates a fresh WireGuard key — re-run
-`mpd-virt start <NNN>` for each VM afterwards.
+`mpd-virt start <NNN>` for each VM afterwards. The first log line names the
+`mpd-proxy` build, so a saved log always says which version produced it.
+
+Chasing a dropped connection and want to rule out the inbound guard? Start it
+with `sudo mpd-proxy up --disable-wg-filter` — the filter is off for that run
+(it logs a loud warning). With the guard down the Mac is reachable from every
+VM, so use it only while debugging, never as a normal mode.
 
 ## Uninstall
 
